@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cooperative Traffic Simulation</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Use Inter font */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom styles for the canvas and layout */
+        canvas {
+            background-color: #0f172a; /* slate-900 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            cursor: pointer; /* Add pointer cursor for clicking */
+        }
+        /* Style for the buttons */
+        .btn {
+            @apply px-4 py-2 rounded-md text-white font-semibold shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+        }
+        .btn-blue {
+            @apply bg-blue-600 hover:bg-blue-700 focus:ring-blue-500;
+        }
+        .btn-green {
+            @apply bg-green-600 hover:bg-green-700 focus:ring-green-500;
+        }
+        .btn-red {
+            @apply bg-red-600 hover:bg-red-700 focus:ring-red-500;
+        }
+        .btn-gray {
+            @apply bg-gray-500 hover:bg-gray-600 focus:ring-gray-400;
+        }
+        /* Style for active speed button */
+        .btn-speed.active {
+            @apply bg-blue-600 hover:bg-blue-700 focus:ring-blue-500;
+            @apply text-white;
+        }
+        .btn-speed {
+             @apply bg-gray-500 hover:bg-gray-600 focus:ring-gray-400;
+             @apply px-3 py-1 text-sm;
+        }
+
+
+        /* Styles for new car dashboard */
+        .car-entry {
+            @apply bg-slate-800 rounded-md mb-2 transition-all duration-150 border-l-4;
+        }
+        .car-entry-blue { @apply border-blue-500; }
+        .car-entry-green { @apply border-green-500; }
+        
+        .car-entry-header {
+            @apply p-3 cursor-pointer;
+        }
+        .car-entry-header:hover {
+            @apply bg-slate-700;
+        }
+        .car-entry-header.selected {
+            @apply bg-slate-700 ring-2 ring-cyan-400;
+        }
+        .car-entry-details {
+            @apply p-3 border-t border-slate-700 text-sm bg-slate-800 rounded-b-md;
+        }
+        .car-entry-id {
+            @apply font-bold text-white;
+        }
+        .car-entry-time {
+            @apply text-sm text-slate-400;
+        }
+
+        /* New style for arrived cars */
+        .car-entry.arrived {
+            @apply opacity-60 bg-slate-800;
+        }
+        .car-entry.arrived .car-entry-header {
+            /* Keep it clickable */
+            @apply cursor-pointer;
+        }
+        .car-entry.arrived .car-entry-header:hover {
+            /* Still give hover feedback */
+            @apply bg-slate-700;
+        }
+        .car-entry.arrived .car-entry-header.selected {
+            /* Keep showing selection */
+            @apply ring-2 ring-cyan-400;
+        }
+        .car-entry.arrived .car-entry-details {
+            /* Details will be shown on select */
+        }
+    </style>
+    <!-- Load Inter font from Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-slate-800 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4">
+
+    <!-- Main layout container -->
+    <div class="w-full max-w-7xl mx-auto flex flex-col lg:flex-row gap-6">
+
+        <!-- NEW Left Column: Definitions -->
+        <div class="w-full lg:w-1/4 lg:order-1 order-3 mt-6 lg:mt-0">
+            <h2 class="text-2xl font-bold text-center mb-4">Key Terms</h2>
+            <div id="definitions-container" class="bg-slate-900 rounded-lg shadow-inner p-4 text-sm text-slate-300 space-y-4" style="overflow-y: auto;">
+                <div>
+                    <strong class="font-semibold text-white">Standard (Selfish) Car</strong>
+                    <p class="text-slate-400">Finds the best path based on traffic *once* at the start. It ignores real-time changes and traffic signals when planning. It will get stuck in new traffic and at red lights.</p>
+                </div>
+                <div>
+                    <strong class="font-semibold text-white">Cooperative (Smart) Car</strong>
+                    <p class="text-slate-400">Actively avoids congestion, road blocks, and red lights. It re-calculates its path at *every intersection* to find the fastest route based on live data.</p>
+                </div>
+                <div>
+                    <strong class="font-semibold text-white">Red Road</strong>
+                    <p class="text-slate-400">Indicates traffic congestion. The brighter the red, the more cars are on that road segment, slowing travel speed.</p>
+                </div>
+                <div>
+                    <strong class="font-semibold text-white">Dark Red (Blocked) Road</strong>
+                    <p class="text-slate-400">A road that has been manually blocked by clicking on it. "Smart" cars will route around it; "Selfish" cars will get stuck if it's on their path.</p>
+                </div>
+                <div>
+                    <strong class="font-semibold text-white">Traffic Signal</strong>
+                    <p class="text-slate-400">Intersections with red/green lights. All cars must stop for red lights. "Smart" cars will try to plan routes that avoid red lights.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Column: Simulation -->
+        <div class="w-full lg:w-1/2 lg:order-2 order-1">
+            <h1 class="text-3xl font-bold text-center mb-4">Cooperative Traffic Simulation</h1>
+            <p class="text-center text-slate-400 mb-6">
+                Traffic signals are now spaced out in 3x3 blocks.
+                <br> <strong class="text-cyan-400">You can still click on any road to block/unblock it!</strong>
+            </p>
+
+            <!-- Controls -->
+            <div class="flex flex-wrap justify-center gap-3 mb-4">
+                <button id="add-selfish" class="btn btn-blue">Add 5 'Standard' Cars</button>
+                <button id="add-cooperative" class="btn btn-green">Add 5 'Cooperative' Cars</button>
+                <button id="reset-sim" class="btn btn-red">Reset Simulation</button>
+            </div>
+            
+            <!-- NEW Speed Controls -->
+            <div class="flex justify-center items-center gap-2 mb-4">
+                <span class="text-sm text-slate-400">Speed:</span>
+                <button id="speed-05" class="btn btn-speed">0.5x</button>
+                <button id="speed-10" class="btn btn-speed active">1x</button>
+                <button id="speed-15" class="btn btn-speed">1.5x</button>
+                <button id="speed-20" class="btn btn-speed">2x</button>
+            </div>
+            
+            <!-- Stats -->
+            <div class="flex justify-center gap-6 mb-4 text-center">
+                <div>
+                    <span class="text-xs text-slate-400 uppercase">Active Cars</span>
+                    <p id="car-count" class="text-2xl font-semibold">0</p>
+                </div>
+                <div>
+                    <span class="text-xs text-slate-400 uppercase">Cars Arrived</span>
+                    <p id="arrived-count" class="text-2xl font-semibold">0</p>
+                </div>
+                <div>
+                    <span class="text-xs text-slate-400 uppercase">Avg. Trip Time</span>
+                    <p id="avg-time" class="text-2xl font-semibold">N/A</p>
+                </div>
+            </div>
+
+            <!-- Simulation Canvas -->
+            <canvas id="simulationCanvas" class="w-full"></canvas>
+        </div>
+
+        <!-- Right Column: Dashboard -->
+        <div class="w-full lg:w-1/4 lg:order-3 order-2">
+            <h2 class="text-2xl font-bold text-center mb-4">Car Dashboard</h2>
+            <div id="car-dashboard-container" class="bg-slate-900 rounded-lg shadow-inner p-4" style="overflow-y: auto;">
+                <!-- Car entries will be dynamically added here -->
+                <p id="no-cars-msg" class="text-slate-500 text-center">No cars on the grid.</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Canvas and Context Setup ---
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- DOM Elements ---
+        const addSelfishBtn = document.getElementById('add-selfish');
+        const addCooperativeBtn = document.getElementById('add-cooperative');
+        const resetBtn = document.getElementById('reset-sim');
+        const carCountEl = document.getElementById('car-count');
+        const arrivedCountEl = document.getElementById('arrived-count');
+        const avgTimeEl = document.getElementById('avg-time');
+        const carDashboardContainer = document.getElementById('car-dashboard-container');
+        const noCarsMsg = document.getElementById('no-cars-msg');
+        const definitionsContainer = document.getElementById('definitions-container');
+        // NEW Speed Buttons
+        const speedBtn05 = document.getElementById('speed-05');
+        const speedBtn10 = document.getElementById('speed-10');
+        const speedBtn15 = document.getElementById('speed-15');
+        const speedBtn20 = document.getElementById('speed-20');
+        const allSpeedBtns = [speedBtn05, speedBtn10, speedBtn15, speedBtn20];
+
+        // --- Simulation Parameters ---
+        const GRID_SIZE = 18; // 18x18 grid (divisible by 3)
+        let nodeRadius = 5;
+        let roadWidth = 4;
+        let carSize = 8;
+        const CONGESTION_PENALTY = 500; // Cost of congestion
+        const BLOCKED_PENALTY = 9999999; // Cost of a blocked road
+        const SIGNAL_PENALTY = 3000; // Cost of a known red light for 'cooperative'
+        const CAR_SPEED = 2; // Base speed, logic ticks per update
+        const CLICK_RADIUS = 20; // How close to click to block a road
+        const SIGNAL_CYCLE_TIME = 240; // 4 seconds at 60fps
+        const SIGNAL_NODE_PERCENT = 0.3; // 30% of *blocks* get a signal
+
+        // --- Global State ---
+        let map = { nodes: [], edges: {} }; // edges uses a key like '0-1'
+        let cars = [];
+        let globalCarId = 0;
+        let simulationTime = 0;
+        let tripTimes = [];
+        let simulationRunning = false;
+        let selectedCarId = null;
+        let arrivedCarData = {}; // Stores data for arrived cars
+        let simulationSpeed = 1.0; // NEW: Speed multiplier
+        
+        // --- Helper: Priority Queue for A* ---
+        class PriorityQueue {
+            constructor() {
+                this.collection = [];
+            }
+            enqueue(element) { // element is [priority, value]
+                if (this.isEmpty()) {
+                    this.collection.push(element);
+                } else {
+                    let added = false;
+                    for (let i = 1; i <= this.collection.length; i++) {
+                        if (element[0] < this.collection[i - 1][0]) {
+                            this.collection.splice(i - 1, 0, element);
+                            added = true;
+                            break;
+                        }
+                    }
+                    if (!added) {
+                        this.collection.push(element);
+                    }
+                }
+            }
+            dequeue() {
+                return this.collection.shift();
+            }
+            isEmpty() {
+                return this.collection.length === 0;
+            }
+        }
+        
+        // --- Helper: A* Pathfinding Algorithm ---
+        function aStar(startNode, endNode, mode) {
+            let frontier = new PriorityQueue();
+            frontier.enqueue([0, startNode]);
+            let cameFrom = { [startNode]: null };
+            let costSoFar = { [startNode]: 0 };
+        
+            while (!frontier.isEmpty()) {
+                let [, current] = frontier.dequeue();
+        
+                if (current === endNode) {
+                    break; // Found the path
+                }
+        
+                const neighbors = map.nodes[current].neighbors;
+                for (const next of neighbors) {
+                    const edgeKey = `${Math.min(current, next)}-${Math.max(current, next)}`;
+                    const edge = map.edges[edgeKey];
+                    if (!edge) continue;
+
+                    let newCost = costSoFar[current] + edge.length;
+                    
+                    // Add congestion penalty
+                    newCost += (edge.congestion || 0) * CONGESTION_PENALTY;
+                    
+                    // Add blocked road penalty
+                    if (edge.blocked) {
+                        newCost += BLOCKED_PENALTY;
+                    }
+
+                    // --- NEW: Add traffic signal penalty for 'cooperative' mode ---
+                    const intersection = map.nodes[current];
+                    if (mode === 'cooperative' && intersection.isTrafficSignal && cameFrom[current] !== null) {
+                        let direction = getDirection(current, next);
+                        let canProceed = checkSignal(direction, intersection.signalState);
+                        if (!canProceed) {
+                            // Add a high cost for a red light
+                            newCost += SIGNAL_PENALTY;
+                        }
+                    }
+                    // --- END OF NEW ---
+
+                    if (costSoFar[next] === undefined || newCost < costSoFar[next]) {
+                        costSoFar[next] = newCost;
+                        let priority = newCost + heuristic(map.nodes[next], map.nodes[endNode]);
+                        frontier.enqueue([priority, next]);
+                        cameFrom[next] = current;
+                    }
+                }
+            }
+        
+            // Reconstruct path
+            let path = [];
+            let current = endNode;
+            while (current !== startNode) {
+                path.push(current);
+                current = cameFrom[current];
+                if (current === undefined) return null; // No path found
+            }
+            path.push(startNode);
+            return path.reverse();
+        }
+
+        // Heuristic function (Manhattan distance)
+        function heuristic(nodeA, nodeB) {
+            return Math.abs(nodeA.x - nodeB.x) + Math.abs(nodeA.y - nodeB.y);
+        }
+
+        // --- NEW: Signal Helper Functions ---
+        function getDirection(fromNodeId, toNodeId) {
+            const from = map.nodes[fromNodeId];
+            const to = map.nodes[toNodeId];
+            if (!from || !to) return 'NONE';
+            
+            if (to.x > from.x) return 'E';
+            if (to.x < from.x) return 'W';
+            if (to.y > from.y) return 'S';
+            if (to.y < from.y) return 'N';
+            return 'NONE';
+        }
+
+        function checkSignal(direction, signalState) {
+            if (signalState === 'NS_GREEN') {
+                return (direction === 'N' || direction === 'S');
+            } else { // 'EW_GREEN'
+                return (direction === 'E' || direction === 'W');
+            }
+        }
+
+        function updateTrafficSignals() {
+            for (const node of map.nodes) {
+                if (node.isTrafficSignal) {
+                    node.signalTimer++;
+                    if (node.signalTimer > SIGNAL_CYCLE_TIME) {
+                        node.signalTimer = 0;
+                        node.signalState = (node.signalState === 'NS_GREEN' ? 'EW_GREEN' : 'NS_GREEN');
+                    }
+                }
+            }
+        }
+
+        // --- Agent: Car Class ---
+        class Car {
+            constructor(startNode, endNode, mode) {
+                this.id = globalCarId++;
+                this.startNode = startNode;
+                this.endNode = endNode;
+                this.mode = mode; // 'selfish' or 'cooperative'
+                this.color = mode === 'selfish' ? '#3b82f6' : '#22c55e'; // blue-500 or green-500
+                
+                // 'selfish' mode ignores signals for initial path, 'cooperative' checks them
+                this.path = aStar(this.startNode, this.endNode, this.mode);
+                this.pathIndex = 0;
+                
+                let startPos = map.nodes[this.startNode];
+                this.x = startPos.x;
+                this.y = startPos.y;
+                
+                this.currentNode = this.startNode;
+                this.targetNode = this.path ? this.path[1] : null;
+                this.currentEdge = null;
+                this.waitingAtSignal = false; // NEW state
+                
+                this.ticks = 0;
+                this.tripStartTime = simulationTime;
+                this.visitedNodes = [this.startNode]; // Store the path taken
+
+                // Initial edge reservation
+                this.updateEdge(null, this.getEdgeKey(this.currentNode, this.targetNode));
+            }
+            
+            getEdgeKey(nodeA, nodeB) {
+                if (nodeA === null || nodeB === null) return null;
+                return `${Math.min(nodeA, nodeB)}-${Math.max(nodeA, nodeB)}`;
+            }
+
+            updateEdge(oldEdgeKey, newEdgeKey) {
+                if (oldEdgeKey) {
+                    const oldEdge = map.edges[oldEdgeKey];
+                    if (oldEdge && oldEdge.congestion > 0) oldEdge.congestion--;
+                }
+                if (newEdgeKey) {
+                    const newEdge = map.edges[newEdgeKey];
+                    if (newEdge) newEdge.congestion = (newEdge.congestion || 0) + 1;
+                }
+                this.currentEdge = map.edges[newEdgeKey] || null;
+            }
+
+            findNewPath() {
+                // Re-calculates the path from the *current* node
+                this.path = aStar(this.currentNode, this.endNode, this.mode);
+                this.pathIndex = 0; // Reset path index to start of new path
+                this.targetNode = this.path ? this.path[1] : null;
+            }
+
+            // --- NEW: State machine logic for updating car ---
+            update() {
+                this.ticks++;
+
+                if (this.waitingAtSignal) {
+                    this.attemptToLeaveSignal();
+                    return; // Don't do any other logic while waiting
+                }
+
+                if (!this.path || !this.targetNode || this.pathIndex >= this.path.length - 1) {
+                    this.arrived();
+                    return;
+                }
+
+                // Check if current edge is blocked
+                if (this.currentEdge && this.currentEdge.blocked) {
+                    if (this.mode === 'cooperative') {
+                        this.findNewPath();
+                    } else {
+                        return; // Selfish car is stuck
+                    }
+                }
+                
+                // --- Movement logic ---
+                this.moveAlongEdge();
+            }
+
+            moveAlongEdge() {
+                if (!this.targetNode) {
+                    // Car is stuck (e.g., selfish car at a new blockage)
+                    return;
+                }
+                let targetPos = map.nodes[this.targetNode];
+                let dx = targetPos.x - this.x;
+                let dy = targetPos.y - this.y;
+                let distance = Math.sqrt(dx * dx + dy * dy);
+                
+                const edgeKey = this.getEdgeKey(this.currentNode, this.targetNode);
+                const edge = map.edges[edgeKey];
+                
+                // Dynamic speed calculation:
+                let speed = CAR_SPEED;
+                if (edge) {
+                    let congestion = (edge.congestion || 0) - 1; // -1 to not count itself
+                    speed = Math.max(0.5, CAR_SPEED - congestion * 0.5);
+                }
+
+                if (distance < speed) {
+                    // Arrived at the next node
+                    this.x = targetPos.x;
+                    this.y = targetPos.y;
+                    this.arriveAtNode();
+                } else {
+                    // Move along the edge
+                    this.x += (dx / distance) * speed;
+                    this.y += (dy / distance) * speed;
+                }
+            }
+
+            arriveAtNode() {
+                const oldEdgeKey = this.getEdgeKey(this.currentNode, this.targetNode);
+                
+                this.currentNode = this.targetNode;
+                this.visitedNodes.push(this.currentNode);
+                
+                // --- NEW: Signal Check Logic ---
+                const intersection = map.nodes[this.currentNode];
+                // Look ahead to the *next* node in the *current* path
+                const nextTargetNodeInPath = this.path[this.pathIndex + 2];
+
+                if (intersection.isTrafficSignal && nextTargetNodeInPath !== undefined) {
+                    let direction = getDirection(this.currentNode, nextTargetNodeInPath);
+                    let canProceed = checkSignal(direction, intersection.signalState);
+
+                    if (!canProceed) {
+                        this.waitingAtSignal = true;
+                        this.updateEdge(oldEdgeKey, null); // Get off the old edge
+                        return; // Stop at the node
+                    }
+                }
+                // --- End Signal Check ---
+
+                // If no signal or signal is green, proceed
+                this.waitingAtSignal = false;
+                
+                // --- RE-ROUTING LOGIC ---
+                if (this.mode === 'cooperative') {
+                    this.findNewPath();
+                } else {
+                    this.pathIndex++;
+                }
+                
+                if (!this.path || this.pathIndex >= this.path.length - 1) {
+                    this.arrived(oldEdgeKey);
+                    return;
+                }
+                
+                this.targetNode = this.path[this.pathIndex + 1];
+                const newEdgeKey = this.getEdgeKey(this.currentNode, this.targetNode);
+
+                // Check if the *next* edge is blocked
+                const newEdge = map.edges[newEdgeKey];
+                if (newEdge && newEdge.blocked) {
+                    if (this.mode === 'cooperative') {
+                        this.findNewPath(); // Re-route immediately
+                        this.targetNode = this.path ? this.path[1] : null;
+                        const finalEdgeKey = this.getEdgeKey(this.currentNode, this.targetNode);
+                        this.updateEdge(oldEdgeKey, finalEdgeKey);
+                    } else {
+                        // Selfish car is stuck at this node
+                        this.updateEdge(oldEdgeKey, null); // No new edge
+                        this.targetNode = null; // Stop moving
+                    }
+                } else {
+                    this.updateEdge(oldEdgeKey, newEdgeKey);
+                }
+            }
+            
+            attemptToLeaveSignal() {
+                const intersection = map.nodes[this.currentNode];
+
+                // --- DEBUG FIX v3 ---
+                // Check if the path is still valid and has a *next* node to go to
+                if (!this.path || !this.path[this.pathIndex + 2]) {
+                    // This can happen if the car's path ended right after the signal
+                    // Or if the path is just [start, signal_node, end_node]
+                    // If path is [0, 5, 10] and car is at 5 (pathIndex 0),
+                    // it checks path[2] (node 10).
+                    // We just need to check if there is a *next node* after this intersection.
+                    // The "next node" is path[pathIndex + 2].
+                    
+                    // If the *current path* doesn't have a node after the current one,
+                    // we might have arrived.
+                    if (this.pathIndex >= this.path.length - 2) {
+                         this.arrived(); // No more nodes in path, we are done
+                         return;
+                    }
+                }
+
+                // This is the node we *want* to go to *after* this intersection
+                const nextTargetNode = this.path[this.pathIndex + 2];
+                // --- END DEBUG FIX v3 ---
+                
+                let direction = getDirection(this.currentNode, nextTargetNode);
+                let canProceed = checkSignal(direction, intersection.signalState);
+
+                if (canProceed) {
+                    this.waitingAtSignal = false;
+                    
+                    // --- DEBUG FIX: Re-implemented "proceed" logic ---
+                    // This logic was previously in arriveAtNode, but calling it
+                    // again caused a recursive bug. This is the correct "go" logic.
+
+                    // 1. Re-route or increment path
+                    if (this.mode === 'cooperative') { 
+                        this.findNewPath(); 
+                    } else { 
+                        this.pathIndex++; 
+                    }
+                    
+                    // 2. Check if new path is valid or if we arrived
+                    if (!this.path || this.pathIndex >= this.path.length - 1) { 
+                        this.arrived(null); // Arrived from a standstill (no old edge)
+                        return; 
+                    }
+                    
+                    // 3. Set new target
+                    this.targetNode = this.path[this.pathIndex + 1];
+                    const newEdgeKey = this.getEdgeKey(this.currentNode, this.targetNode);
+
+                    // 4. Check if new target edge is blocked
+                    const newEdge = map.edges[newEdgeKey];
+                    if (newEdge && newEdge.blocked) {
+                        if (this.mode === 'cooperative') {
+                            this.findNewPath(); // Re-route immediately
+                            this.targetNode = this.path ? this.path[1] : null;
+                            const finalEdgeKey = this.getEdgeKey(this.currentNode, this.targetNode);
+                            this.updateEdge(null, finalEdgeKey);
+                        } else {
+                            // Selfish car is stuck at this node
+                            this.updateEdge(null, null); // No new edge
+                            this.targetNode = null; // Stop moving
+                        }
+                    } else {
+                        // 5. Go!
+                        this.updateEdge(null, newEdgeKey); // Start on the new edge
+                    }
+                    // --- END DEBUG FIX ---
+                }
+                // else: continue waiting
+            }
+            // --- END NEW State machine logic ---
+            
+            arrived(oldEdgeKey = null) {
+                // Use the passed oldEdgeKey or get it one last time
+                const finalEdgeKey = oldEdgeKey || this.getEdgeKey(this.currentNode, this.targetNode);
+                this.updateEdge(finalEdgeKey, null); // De-congest the final edge
+
+                const finalTripTime = simulationTime - this.tripStartTime;
+                tripTimes.push(finalTripTime);
+                
+                arrivedCarData[this.id] = { path: this.visitedNodes, time: finalTripTime };
+                markCarAsArrivedInDashboard(this.id, finalTripTime);
+                cars = cars.filter(c => c.id !== this.id);
+                updateStats();
+            }
+
+            draw() {
+                // Draw car
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, carSize / 2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Add a white inner dot
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, carSize / 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // --- Map Generation ---
+        function createMap() {
+            map = { nodes: [], edges: {} };
+            cars = [];
+            tripTimes = [];
+            simulationTime = 0;
+            globalCarId = 0;
+            arrivedCarData = {};
+
+            let canvasWidth = canvas.clientWidth;
+            let canvasHeight = canvas.clientWidth / 1.5;
+            canvas.width = canvasWidth;
+            canvas.height = canvasHeight;
+            
+            // Set dashboard height to match canvas height
+            carDashboardContainer.style.maxHeight = `${canvasHeight}px`;
+            definitionsContainer.style.maxHeight = `${canvasHeight}px`; // NEW
+            
+            const padding = 50;
+            const xSpacing = (canvasWidth - padding * 2) / (GRID_SIZE - 1);
+            const ySpacing = (canvasHeight - padding * 2) / (GRID_SIZE - 1);
+            
+            nodeRadius = Math.max(3, Math.min(xSpacing, ySpacing) / 5);
+            carSize = nodeRadius * 2;
+            roadWidth = nodeRadius / 1.5;
+
+            // Create nodes
+            let id = 0;
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    // const isSignal = Math.random() < SIGNAL_NODE_PERCENT; // OLD LOGIC
+                    map.nodes.push({
+                        id: id,
+                        x: padding + x * xSpacing,
+                        y: padding + y * ySpacing,
+                        neighbors: [],
+                        isTrafficSignal: false, // NEW: Default to false
+                        signalState: Math.random() > 0.5 ? 'NS_GREEN' : 'EW_GREEN',
+                        signalTimer: Math.floor(Math.random() * SIGNAL_CYCLE_TIME)
+                    });
+                    id++;
+                }
+            }
+
+            // --- NEW: Block-based Traffic Signal Placement ---
+            const BLOCK_SIZE = 3;
+            const blockGridSize = GRID_SIZE / BLOCK_SIZE; // 18/3 = 6
+            const endNodeId = (GRID_SIZE * GRID_SIZE) - 1;
+
+            for (let by = 0; by < blockGridSize; by++) {
+                for (let bx = 0; bx < blockGridSize; bx++) {
+                    // Decide if this block gets a signal
+                    if (Math.random() < SIGNAL_NODE_PERCENT) {
+                        // Pick one random node within this 3x3 block
+                        const nodeX = (bx * BLOCK_SIZE) + Math.floor(Math.random() * BLOCK_SIZE);
+                        const nodeY = (by * BLOCK_SIZE) + Math.floor(Math.random() * BLOCK_SIZE);
+                        const nodeId = (nodeY * GRID_SIZE) + nodeX;
+
+                        // Don't allow start or end nodes to be signals
+                        if (nodeId === 0 || nodeId === endNodeId) {
+                            continue;
+                        }
+
+                        if (map.nodes[nodeId]) {
+                            map.nodes[nodeId].isTrafficSignal = true;
+                        }
+                    }
+                }
+            }
+            // --- END NEW LOGIC ---
+
+            // Create edges (roads)
+            for (let i = 0; i < map.nodes.length; i++) {
+                let node = map.nodes[i];
+                let row = Math.floor(i / GRID_SIZE);
+                let col = i % GRID_SIZE;
+
+                if (col < GRID_SIZE - 1) {
+                    let neighborId = i + 1;
+                    if (Math.random() > 0.1) addEdge(node.id, neighborId);
+                }
+                if (row < GRID_SIZE - 1) {
+                    let neighborId = i + GRID_SIZE;
+                    if (Math.random() > 0.1) addEdge(node.id, neighborId);
+                }
+            }
+        }
+        
+        function addEdge(nodeA, nodeB) {
+            map.nodes[nodeA].neighbors.push(nodeB);
+            map.nodes[nodeB].neighbors.push(nodeA);
+            
+            let posA = map.nodes[nodeA];
+            let posB = map.nodes[nodeB];
+            let length = Math.sqrt(Math.pow(posA.x - posB.x, 2) + Math.pow(posA.y - posB.y, 2));
+            
+            let key = `${Math.min(nodeA, nodeB)}-${Math.max(nodeA, nodeB)}`;
+            map.edges[key] = {
+                a: nodeA,
+                b: nodeB,
+                length: length,
+                congestion: 0,
+                blocked: false
+            };
+        }
+
+        // --- Drawing Functions ---
+        function drawMap() {
+            ctx.lineCap = 'round';
+            
+            // Draw edges
+            for (const key in map.edges) {
+                const edge = map.edges[key];
+                let posA = map.nodes[edge.a];
+                let posB = map.nodes[edge.b];
+                
+                if (edge.blocked) {
+                    ctx.strokeStyle = '#7f1d1d'; // red-900
+                    ctx.lineWidth = roadWidth * 1.5;
+                } else if (edge.congestion > 0) {
+                    let congestionColor = Math.min(255, 50 + edge.congestion * 40);
+                    ctx.strokeStyle = `rgb(${congestionColor}, 100, 50)`;
+                    ctx.lineWidth = roadWidth;
+                } else {
+                    ctx.strokeStyle = '#334155'; // slate-700
+                    ctx.lineWidth = roadWidth;
+                }
+                
+                ctx.beginPath();
+                ctx.moveTo(posA.x, posA.y);
+                ctx.lineTo(posB.x, posB.y);
+                ctx.stroke();
+            }
+            ctx.lineCap = 'butt';
+
+            // Draw nodes
+            for (const node of map.nodes) {
+                if (node.isTrafficSignal) {
+                    // Draw signal box
+                    ctx.fillStyle = '#475569'; // slate-600
+                    ctx.fillRect(node.x - nodeRadius * 1.5, node.y - nodeRadius * 1.5, nodeRadius * 3, nodeRadius * 3);
+                    
+                    // Draw lights
+                    const lightSize = nodeRadius * 0.8;
+                    if (node.signalState === 'NS_GREEN') {
+                        ctx.fillStyle = '#22c55e'; // green-500
+                        ctx.fillRect(node.x - lightSize / 2, node.y - nodeRadius * 1.5 - lightSize, lightSize, lightSize); // North
+                        ctx.fillRect(node.x - lightSize / 2, node.y + nodeRadius * 1.5, lightSize, lightSize); // South
+                        ctx.fillStyle = '#ef4444'; // red-500
+                        ctx.fillRect(node.x - nodeRadius * 1.5 - lightSize, node.y - lightSize / 2, lightSize, lightSize); // West
+                        ctx.fillRect(node.x + nodeRadius * 1.5, node.y - lightSize / 2, lightSize, lightSize); // East
+                    } else { // EW_GREEN
+                        ctx.fillStyle = '#ef4444'; // red-500
+                        ctx.fillRect(node.x - lightSize / 2, node.y - nodeRadius * 1.5 - lightSize, lightSize, lightSize); // North
+                        ctx.fillRect(node.x - lightSize / 2, node.y + nodeRadius * 1.5, lightSize, lightSize); // South
+                        ctx.fillStyle = '#22c55e'; // green-500
+                        ctx.fillRect(node.x - nodeRadius * 1.5 - lightSize, node.y - lightSize / 2, lightSize, lightSize); // West
+                        ctx.fillRect(node.x + nodeRadius * 1.5, node.y - lightSize / 2, lightSize, lightSize); // East
+                    }
+                } else {
+                    // Draw normal node
+                    ctx.fillStyle = '#475569';
+                    ctx.beginPath();
+                    ctx.arc(node.x, node.y, nodeRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            
+            // Draw Start/End
+            ctx.fillStyle = '#10b981';
+            ctx.beginPath();
+            ctx.arc(map.nodes[0].x, map.nodes[0].y, nodeRadius * 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = '#ef4444';
+            let endNode = map.nodes[map.nodes.length - 1];
+            ctx.beginPath();
+            ctx.arc(endNode.x, endNode.y, nodeRadius * 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // --- Dashboard UI Functions ---
+        
+        function addCarToDashboard(car) {
+            noCarsMsg.style.display = 'none';
+
+            const carDiv = document.createElement('div');
+            carDiv.id = `car-entry-${car.id}`;
+            carDiv.className = `car-entry ${car.mode === 'selfish' ? 'car-entry-blue' : 'car-entry-green'}`;
+            
+            carDiv.innerHTML = `
+                <div class="car-entry-header" data-car-id="${car.id}">
+                    <span class="car-entry-id">Car ${car.id}</span>
+                    <span class="text-sm">(${car.mode})</span>
+                    <div class="car-entry-time">Time: 0.00s</div>
+                </div>
+                <div class="car-entry-details" style="display: none;">
+                    <!-- Content will be added here by selectCar -->
+                </div>
+            `;
+            
+            carDiv.querySelector('.car-entry-header').addEventListener('click', () => selectCar(car.id));
+            carDashboardContainer.appendChild(carDiv);
+        }
+
+        function markCarAsArrivedInDashboard(carId, finalTimeInTicks) {
+            const carDiv = document.getElementById(`car-entry-${carId}`);
+            if (carDiv) {
+                carDiv.classList.add('arrived');
+                
+                const timeDiv = carDiv.querySelector('.car-entry-time');
+                if (timeDiv) {
+                    const finalTimeInSeconds = (finalTimeInTicks / 60).toFixed(2);
+                    timeDiv.innerHTML = `<strong>Arrived: ${finalTimeInSeconds}s</strong>`;
+                    timeDiv.className = 'car-entry-time text-sm text-emerald-400';
+                }
+
+                const header = carDiv.querySelector('.car-entry-header');
+                if (header) header.classList.remove('selected');
+                const details = carDiv.querySelector('.car-entry-details');
+                if (details) details.style.display = 'none';
+            }
+            if (selectedCarId === carId) selectedCarId = null;
+        }
+
+        function selectCar(carId) {
+            // Deselect old
+            if (selectedCarId !== null) {
+                const oldHeader = document.querySelector(`#car-entry-${selectedCarId} .car-entry-header`);
+                if (oldHeader) {
+                    oldHeader.classList.remove('selected');
+                    const oldDetails = oldHeader.nextElementSibling;
+                    if (oldDetails) {
+                        oldDetails.style.display = 'none';
+                        oldDetails.innerHTML = '';
+                    }
+                }
+            }
+            
+            if (selectedCarId === carId) {
+                selectedCarId = null;
+                return;
+            }
+
+            // Select new
+            selectedCarId = carId;
+            const newHeader = document.querySelector(`#car-entry-${carId} .car-entry-header`);
+            const newDetails = newHeader.nextElementSibling;
+            
+            if (newHeader && newDetails) {
+                newHeader.classList.add('selected');
+
+                const car = cars.find(c => c.id === carId);
+                let detailsHtml = '';
+
+                if (car) {
+                    // Car is active
+                    if (car.mode === 'selfish') {
+                        detailsHtml = `
+                            <strong>Strategy:</strong> Selfish<br>
+                            <strong>Influence:</strong> Initial traffic.<br>
+                            This car <strong>does not</strong> re-route and <strong>ignores</strong> signal states when planning.
+                        `;
+                    } else {
+                        const edge = car.currentEdge;
+                        const congestion = edge ? Math.max(0, edge.congestion - 1) : 0;
+                        detailsHtml = `
+                            <strong>Strategy:</strong> Cooperative<br>
+                            <strong>Influence:</strong> Live traffic, road blocks, & red lights.<br>
+                            Re-routes at <strong>every node</strong>.<br>
+                            Current edge has <strong>${congestion}</strong> other car(s).
+                        `;
+                    }
+                    if (car.waitingAtSignal) {
+                        detailsHtml += `<br><strong class="text-red-400">Waiting at Red Light</strong>`;
+                    }
+                    newDetails.innerHTML = detailsHtml;
+                } else {
+                    // Car has arrived
+                    const arrivedData = arrivedCarData[carId];
+                    if (arrivedData) {
+                        detailsHtml = `
+                            <strong>Strategy:</strong> Arrived<br>
+                            <strong>Final Time:</strong> ${(arrivedData.time / 60).toFixed(2)}s<br>
+                            Showing final path taken.
+                        `;
+                    }
+                    newDetails.innerHTML = detailsHtml;
+                }
+                newDetails.style.display = 'block';
+            }
+        }
+
+        function drawSelectedCarPath() {
+            if (selectedCarId === null) return;
+            
+            const car = cars.find(c => c.id === selectedCarId);
+            
+            if (car) {
+                // Car is ACTIVE: Draw remaining path
+                if (!car.path) return;
+                
+                ctx.strokeStyle = '#f0f9ff';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 5]);
+                
+                ctx.beginPath();
+                ctx.moveTo(car.x, car.y);
+                
+                if(car.targetNode) {
+                    let target = map.nodes[car.targetNode];
+                    ctx.lineTo(target.x, target.y);
+                }
+                
+                for (let i = car.pathIndex + 1; i < car.path.length - 1; i++) {
+                    let nodeA = map.nodes[car.path[i]];
+                    let nodeB = map.nodes[car.path[i+1]];
+                    if(nodeA && nodeB) {
+                        ctx.lineTo(nodeB.x, nodeB.y);
+                    }
+                }
+                ctx.stroke();
+                ctx.setLineDash([]);
+                
+            } else {
+                // Car is ARRIVED: Draw full path taken
+                const arrivedData = arrivedCarData[selectedCarId];
+                if (arrivedData && arrivedData.path) {
+                    ctx.strokeStyle = '#a5b4fc';
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([]);
+                    
+                    ctx.beginPath();
+                    let startNodePos = map.nodes[arrivedData.path[0]];
+                    ctx.moveTo(startNodePos.x, startNodePos.y);
+                    
+                    for (let i = 1; i < arrivedData.path.length; i++) {
+                        let nodePos = map.nodes[arrivedData.path[i]];
+                        ctx.lineTo(nodePos.x, nodePos.y);
+                    }
+                    ctx.stroke();
+                }
+            }
+        }
+
+        function updateDashboardTimes() {
+            for (const car of cars) {
+                const carDiv = document.getElementById(`car-entry-${car.id}`);
+                if (!carDiv || carDiv.classList.contains('arrived')) continue;
+
+                const timeDiv = carDiv.querySelector(`.car-entry-time`);
+                if (timeDiv) {
+                    const currentTime = ((simulationTime - car.tripStartTime) / 60).toFixed(2);
+                    timeDiv.textContent = `Time: ${currentTime}s`;
+                }
+
+                // Update details if this car is selected
+                if (selectedCarId === car.id) {
+                    const detailsDiv = carDiv.querySelector('.car-entry-details');
+                    if(detailsDiv) {
+                        let detailsHtml = '';
+                        if (car.mode === 'selfish') {
+                            detailsHtml = `
+                                <strong>Strategy:</strong> Selfish<br>
+                                <strong>Influence:</strong> Initial traffic.<br>
+                                This car <strong>does not</strong> re-route and <strong>ignores</strong> signal states when planning.
+                            `;
+                        } else {
+                            const edge = car.currentEdge;
+                            const congestion = edge ? Math.max(0, edge.congestion - 1) : 0;
+                            detailsHtml = `
+                                <strong>Strategy:</strong> Cooperative<br>
+                                <strong>Influence:</strong> Live traffic, road blocks, & red lights.<br>
+                                Re-routes at <strong>every node</strong>.<br>
+                                Current edge has <strong>${congestion}</strong> other car(s).
+                            `;
+                        }
+                        if (car.waitingAtSignal) {
+                            detailsHtml += `<br><strong class="text-red-400">Waiting at Red Light</strong>`;
+                        }
+                        detailsDiv.innerHTML = detailsHtml;
+                    }
+                }
+            }
+        }
+
+        // --- Simulation Loop ---
+        function gameLoop() {
+            
+            // --- NEW: Speed Control Logic ---
+            // Keep track of fractional frames
+            if (typeof gameLoop.frameCounter === 'undefined') {
+                gameLoop.frameCounter = 0;
+            }
+            gameLoop.frameCounter += simulationSpeed;
+
+            // Run the simulation logic multiple times per frame if speed is > 1
+            // Or skip frames if speed is < 1
+            while(gameLoop.frameCounter >= 1) {
+                simulationTime++;
+                updateTrafficSignals();
+                
+                for (let i = cars.length - 1; i >= 0; i--) {
+                    if(cars[i]) { // Check if car still exists (wasn't removed)
+                        cars[i].update();
+                    }
+                }
+                
+                if (simulationTime % 10 === 0) {
+                    updateDashboardTimes();
+                }
+                gameLoop.frameCounter -= 1;
+            }
+            // --- END Speed Control ---
+
+            // Drawing happens every frame, regardless of speed
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            drawMap();
+            drawSelectedCarPath();
+            
+            for (let i = cars.length - 1; i >= 0; i--) {
+                 if(cars[i]) {
+                    cars[i].draw(); // Draw car at its current position
+                }
+            }
+            
+            if (simulationRunning) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // --- Control Functions ---
+        function addCars(count, mode) {
+            const startNode = 0;
+            const endNode = map.nodes.length - 1;
+            
+            for(let i=0; i < count; i++) {
+                setTimeout(() => {
+                    const newCar = new Car(startNode, endNode, mode);
+                    cars.push(newCar);
+                    addCarToDashboard(newCar);
+                }, i * 200);
+            }
+            
+            if (!simulationRunning && cars.length > 0) {
+                simulationRunning = true;
+                gameLoop();
+            }
+            updateStats();
+        }
+
+        function resetSimulation() {
+            simulationRunning = false;
+            createMap();
+            setSpeed(1.0); // Reset speed to 1x
+            
+            carDashboardContainer.innerHTML = '';
+            carDashboardContainer.appendChild(noCarsMsg);
+            noCarsMsg.style.display = 'block';
+            selectedCarId = null;
+
+            updateStats();
+            setTimeout(() => {
+                simulationRunning = true;
+                gameLoop();
+            }, 100);
+        }
+        
+        // NEW: Speed Control Function
+        function setSpeed(newSpeed) {
+            simulationSpeed = newSpeed;
+            allSpeedBtns.forEach(btn => {
+                btn.classList.remove('active');
+                btn.classList.remove('btn-blue');
+                btn.classList.add('btn-gray');
+            });
+            
+            if (newSpeed === 0.5) { speedBtn05.classList.add('active'); speedBtn05.classList.remove('btn-gray'); }
+            else if (newSpeed === 1.0) { speedBtn10.classList.add('active'); speedBtn10.classList.remove('btn-gray'); }
+            else if (newSpeed === 1.5) { speedBtn15.classList.add('active'); speedBtn15.classList.remove('btn-gray'); }
+            else if (newSpeed === 2.0) { speedBtn20.classList.add('active'); speedBtn20.classList.remove('btn-gray'); }
+        }
+
+
+        function updateStats() {
+            carCountEl.textContent = cars.length;
+            arrivedCountEl.textContent = tripTimes.length;
+            
+            if (tripTimes.length > 0) {
+                const sum = tripTimes.reduce((a, b) => a + b, 0);
+                const avg = (sum / tripTimes.length) / 60;
+                avgTimeEl.textContent = `${avg.toFixed(2)}s`;
+            } else {
+                avgTimeEl.textContent = 'N/A';
+            }
+        }
+
+        // --- Canvas Click Handler ---
+        function getMousePos(canvas, evt) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: evt.clientX - rect.left,
+                y: evt.clientY - rect.top
+            };
+        }
+
+        function handleMapClick(event) {
+            const mousePos = getMousePos(canvas, event);
+            
+            let closestEdge = null;
+            let minDistance = Infinity;
+
+            for (const key in map.edges) {
+                const edge = map.edges[key];
+                const posA = map.nodes[edge.a];
+                const posB = map.nodes[edge.b];
+                
+                const midX = (posA.x + posB.x) / 2;
+                const midY = (posA.y + posB.y) / 2;
+                
+                const dx = mousePos.x - midX;
+                const dy = mousePos.y - midY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestEdge = edge;
+                }
+            }
+
+            if (closestEdge && minDistance < CLICK_RADIUS) {
+                closestEdge.blocked = !closestEdge.blocked;
+            }
+        }
+        
+        // --- Event Listeners ---
+        addSelfishBtn.addEventListener('click', () => addCars(5, 'selfish'));
+        addCooperativeBtn.addEventListener('click', () => addCars(5, 'cooperative'));
+        resetBtn.addEventListener('click', resetSimulation);
+        canvas.addEventListener('click', handleMapClick);
+        
+        // NEW Speed Listeners
+        speedBtn05.addEventListener('click', () => setSpeed(0.5));
+        speedBtn10.addEventListener('click', () => setSpeed(1.0));
+        speedBtn15.addEventListener('click', () => setSpeed(1.5));
+        speedBtn20.addEventListener('click', () => setSpeed(2.0));
+
+        
+        window.addEventListener('resize', resetSimulation);
+
+        // --- Initial Start ---
+        resetSimulation();
+        
+    </script>
+</body>
+</html>
+
